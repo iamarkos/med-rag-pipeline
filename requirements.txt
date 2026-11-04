@@ -1,0 +1,8 @@
+fastapi[standard]==0.115.4
+celery==5.4.0
+redis>=6.1.0
+SQLAlchemy==2.0.36
+psycopg[binary]
+python-multipart==0.0.17
+pgvector
+sentence-transformers
