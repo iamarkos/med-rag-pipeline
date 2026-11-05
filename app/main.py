@@ -1,21 +1,21 @@
-from fastapi import FastAPI, UploadFile, File, status, HTTPException, Depends
+from fastapi import FastAPI, UploadFile, File, Form, status, HTTPException, Depends
+from sqlalchemy.orm import Session
 from contextlib import asynccontextmanager
 from sqlalchemy import text
-from app.database import engine, Base
+from app.database import engine, Base, get_db
+from app.models import ClinicalDocument, Patient
 from app.worker import process_clinical_note
-from sqlalchemy.orm import Session
-from app.database import get_db
-from app.models import ClinicalDocument
+import fitz
 
 # Before the API starts accepting requests
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 1. Enable the pgvector extension in PostgreSQL
+    # Enable the pgvector extension in PostgreSQL
     with engine.connect() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         conn.commit()
         
-    # 2. Create the tables
+    # Create the tables
     Base.metadata.create_all(bind=engine)
     yield
 
@@ -25,36 +25,61 @@ app = FastAPI(title="Medical RAG Pipeline", lifespan=lifespan)
 @app.post("/upload", status_code=status.HTTP_202_ACCEPTED)
 async def upload_document(
     file: UploadFile = File(...), 
+    patient_name: str = Form(...),
     db: Session = Depends(get_db)
 ):
-    if file.content_type not in ["text/plain", "text/csv"]:
+    # Validate File Type
+    allowed_types = ["text/plain", "text/csv", "application/pdf"]
+    if file.content_type not in allowed_types:
         raise HTTPException(
             status_code=415,
-            detail="Unsupported Media Type. Please upload a raw .txt file."
+            detail="Unsupported Media Type. Please upload a .txt, .csv, or .pdf file."
         )
 
     content = await file.read()
-    try:
-        text_content = content.decode("utf-8")
-    except UnicodeDecodeError:
-         raise HTTPException(
-            status_code=400,
-            detail="File could not be decoded. Ensure it is a valid UTF-8 text file."
-        )
+    text_content = ""
     
-    # 1. Create a "pending" row in PostgreSQL immediately
-    new_doc = ClinicalDocument(filename=file.filename, status="pending")
+    # Secure In-Memory Parsing
+    if file.content_type == "application/pdf":
+        try:
+            # Open the PDF directly from the byte stream
+            pdf_document = fitz.open(stream=content, filetype="pdf")
+            for page_num in range(len(pdf_document)):
+                page = pdf_document.load_page(page_num)
+                text_content += str(page.get_text())
+            pdf_document.close()
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to parse PDF: {str(e)}")
+    else:
+        try:
+            text_content = content.decode("utf-8")
+        except UnicodeDecodeError:
+             raise HTTPException(status_code=400, detail="Ensure valid UTF-8 text.")
+    
+    # Identity Isolation
+    new_patient = Patient(full_name=patient_name)
+    db.add(new_patient)
+    db.commit()
+    db.refresh(new_patient)
+    
+    # Clinical Storage (UUID linked)
+    new_doc = ClinicalDocument(
+        filename=file.filename, 
+        status="pending",
+        patient_id=new_patient.id
+    )
     db.add(new_doc)
     db.commit()
-    db.refresh(new_doc) # Retrieves the generated ID from Postgres
+    db.refresh(new_doc)
     
-    # 2. Send to Celery, passing the new Database ID
+    # Send to Celery worker
     task = process_clinical_note.delay(new_doc.id, text_content)
     
     return {
         "message": "Document received and queued for processing.",
         "task_id": task.id,
         "database_id": new_doc.id,
+        "patient_uuid": new_patient.id,
         "filename": file.filename
     }
 
@@ -68,6 +93,8 @@ async def get_task_status(task_id: str):
         return {"status": "completed", "result": task_result.result}
     
     return {"status": task_result.status}
+
+
 
 from sentence_transformers import SentenceTransformer
 
