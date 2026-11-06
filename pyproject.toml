@@ -1,0 +1,9 @@
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+
+[tool.ruff.lint]
+# B008 = Ignore function calls in argument defaults (required for FastAPI)
+# BLE001 = Ignore blind exception catching (required for global error handlers)
+ignore = ["B008", "BLE001"]
