@@ -11,23 +11,32 @@ jobs:
     name: Code Quality (Ruff & Mypy)
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
-    - name: Install Linters
-      run: pip install ruff mypy
+        
+    - name: Install Dependencies & Linters
+      run: |
+        pip install uv
+        uv pip install --system -r requirements.txt
+        uv pip install --system ruff mypy
+        
     - name: Run Ruff Format Check
       run: ruff format --check .
+      
     - name: Run Ruff Linter
       run: ruff check .
+      
     - name: Run Mypy
       run: mypy app/
 
   integration-test:
     name: Integration Tests
-    needs: lint-and-type # <-- This ensures tests only run if linting passes
+    needs: lint-and-type
     runs-on: ubuntu-latest
     
     services:
@@ -46,16 +55,21 @@ jobs:
           --health-retries 5
 
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
+        
     - name: Install Dependencies
       run: |
         pip install uv
         uv pip install --system -r requirements.txt
+        
     - name: Run Alembic Migrations
       run: alembic upgrade head
+      
     - name: Run Pytest
       run: pytest -v
