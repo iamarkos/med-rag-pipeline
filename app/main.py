@@ -14,9 +14,7 @@ async def lifespan(app: FastAPI):
     with engine.connect() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         conn.commit()
-        
-    # Create the tables
-    Base.metadata.create_all(bind=engine)
+
     yield
 
 app = FastAPI(title="Medical RAG Pipeline", lifespan=lifespan)
