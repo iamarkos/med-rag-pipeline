@@ -5,13 +5,12 @@ from presidio_analyzer import AnalyzerEngine
 from presidio_anonymizer import AnonymizerEngine
 from sentence_transformers import SentenceTransformer
 
+from app.config import REDIS_URL
 from app.database import SessionLocal
 from app.models import ClinicalDocument
 
 # Initialize Celery
-celery_app = Celery(
-    "medical_worker", broker="redis://redis:6379/0", backend="redis://redis:6379/0"
-)
+celery_app = Celery("medical_worker", broker=REDIS_URL, backend=REDIS_URL)
 
 # Load the AI model globally
 print("Loading HuggingFace AI Model...")

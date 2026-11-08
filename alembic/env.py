@@ -10,6 +10,7 @@ from alembic import context
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # 2. Import your Base and EVERY model so Alembic can read their structure
+from app.config import DATABASE_URL
 from app.database import Base
 
 # this is the Alembic Config object
@@ -19,9 +20,9 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# 3. Override the sqlalchemy.url dynamically.
-local_db_url = "postgresql+psycopg://admin:password@localhost:5433/medical_db"
-config.set_main_option("sqlalchemy.url", local_db_url)
+# 3. Take the database URL from the environment (see .env.example).
+# Alembic's config parser treats "%" specially, so a literal "%" must be doubled.
+config.set_main_option("sqlalchemy.url", DATABASE_URL.replace("%", "%%"))
 
 # 4. Point Alembic to your model metadata
 target_metadata = Base.metadata

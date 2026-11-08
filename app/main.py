@@ -1,3 +1,4 @@
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -13,7 +14,7 @@ from app.worker import process_clinical_note
 
 # Before the API starts accepting requests
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> Any:
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Enable the pgvector extension in PostgreSQL
     with engine.connect() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
@@ -108,10 +109,10 @@ print("Search Model ready!")
 
 @app.get("/search")
 def search_documents(query: str, db: Session = Depends(get_db)) -> dict[str, Any]:
-    # 1. Convert the user's question into a mathematical vector
+    # Convert the user's question into a mathematical vector
     query_vector = search_model.encode(query).tolist()
 
-    # 2. Perform Cosine Similarity Search using pgvector
+    # Perform Cosine Similarity Search using pgvector
     # The .cosine_distance() function maps directly to PostgreSQL's <=> operator
     results = (
         db.query(ClinicalDocument)
@@ -124,7 +125,7 @@ def search_documents(query: str, db: Session = Depends(get_db)) -> dict[str, Any
         .all()
     )
 
-    # 3. Return the semantically closest medical documents
+    # Return the semantically closest medical documents
     return {
         "query": query,
         "results": [

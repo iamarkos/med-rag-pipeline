@@ -1,10 +1,14 @@
+x-app-environment: &app-environment
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB}
+  REDIS_URL: redis://redis:6379/0
+
 services:
   db:
     image: pgvector/pgvector:pg15
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: medical_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5433:5432"
 
@@ -16,6 +20,7 @@ services:
   api:
     build: .
     command: fastapi run app/main.py --port 8000 --host 0.0.0.0
+    environment: *app-environment
     volumes:
       - .:/app
     ports:
@@ -27,6 +32,7 @@ services:
   worker:
     build: .
     command: celery -A app.worker.celery_app worker --loglevel=info
+    environment: *app-environment
     volumes:
       - ./app:/app/app
     depends_on:

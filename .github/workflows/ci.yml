@@ -38,6 +38,11 @@ jobs:
     name: Integration Tests
     needs: lint-and-type
     runs-on: ubuntu-latest
+
+    # Throwaway values for the disposable database below; nothing real lives here.
+    env:
+      DATABASE_URL: postgresql+psycopg://admin:password@localhost:5433/medical_db
+      REDIS_URL: redis://localhost:6379/0
     
     services:
       db:
