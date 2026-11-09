@@ -1,20 +1,16 @@
 from typing import Any
 
-from celery import Celery
 from presidio_analyzer import AnalyzerEngine
 from presidio_anonymizer import AnonymizerEngine
-from sentence_transformers import SentenceTransformer
 
-from app.config import REDIS_URL
+from app.celery_app import PROCESS_NOTE_TASK, celery_app
 from app.database import SessionLocal
+from app.embeddings import embed_text, get_embedding_model
 from app.models import ClinicalDocument
 
-# Initialize Celery
-celery_app = Celery("medical_worker", broker=REDIS_URL, backend=REDIS_URL)
-
-# Load the AI model globally
+# Load the models when the worker starts, so the first task is not slow.
 print("Loading HuggingFace AI Model...")
-model = SentenceTransformer("all-MiniLM-L6-v2")
+get_embedding_model()
 
 print("Loading Microsoft Presidio PII Analyzer...")
 analyzer = AnalyzerEngine()
@@ -23,7 +19,7 @@ anonymizer = AnonymizerEngine()
 print("AI Models loaded successfully!")
 
 
-@celery_app.task(bind=True)  # type: ignore[untyped-decorator]
+@celery_app.task(bind=True, name=PROCESS_NOTE_TASK)  # type: ignore[untyped-decorator]
 def process_clinical_note(
     self: Any, document_id: int, document_text: str
 ) -> dict[str, Any]:
@@ -42,7 +38,7 @@ def process_clinical_note(
     safe_text = anonymized_result.text
 
     # Converts the text into an array of 384 floating-point numbers
-    embedding_vector = model.encode(safe_text).tolist()
+    embedding_vector = embed_text(safe_text)
 
     # Dynamic NLP Extraction
     text_lower = safe_text.lower()

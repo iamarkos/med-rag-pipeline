@@ -4,9 +4,10 @@ import fitz
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
+from app.celery_app import PROCESS_NOTE_TASK, celery_app
 from app.database import get_db
+from app.embeddings import embed_text
 from app.models import ClinicalDocument, Patient
-from app.worker import process_clinical_note
 
 # The database schema (tables and the pgvector extension) is created by the
 # Alembic migrations, not by the API at startup.
@@ -61,8 +62,8 @@ async def upload_document(
     db.commit()
     db.refresh(new_doc)
 
-    # Send to Celery worker
-    task = process_clinical_note.delay(new_doc.id, text_content)
+    # Send to Celery worker (by task name, so the API never imports the worker)
+    task = celery_app.send_task(PROCESS_NOTE_TASK, args=[new_doc.id, text_content])
 
     return {
         "message": "Document received and queued for processing.",
@@ -76,8 +77,6 @@ async def upload_document(
 @app.get("/task/{task_id}")
 async def get_task_status(task_id: str) -> dict[str, Any]:
     # Check Redis for the status of the task
-    from app.worker import celery_app
-
     task_result = celery_app.AsyncResult(task_id)
 
     if task_result.ready():
@@ -86,18 +85,10 @@ async def get_task_status(task_id: str) -> dict[str, Any]:
     return {"status": task_result.status}
 
 
-from sentence_transformers import SentenceTransformer
-
-# Load the model in the API specifically for translating search queries
-print("Loading Search Embeddings Model...")
-search_model = SentenceTransformer("all-MiniLM-L6-v2")
-print("Search Model ready!")
-
-
 @app.get("/search")
 def search_documents(query: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     # Convert the user's question into a mathematical vector
-    query_vector = search_model.encode(query).tolist()
+    query_vector = embed_text(query)
 
     # Perform Cosine Similarity Search using pgvector
     # The .cosine_distance() function maps directly to PostgreSQL's <=> operator
