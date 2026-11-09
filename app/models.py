@@ -7,6 +7,7 @@ from sqlalchemy import JSON, DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.status import DocumentStatus
 
 
 class Patient(Base):
@@ -28,7 +29,9 @@ class ClinicalDocument(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     filename: Mapped[str] = mapped_column(String, nullable=False)
-    status: Mapped[str] = mapped_column(String, default="pending")
+    status: Mapped[str] = mapped_column(String, default=DocumentStatus.PENDING)
+    # Set only when status is "failed": a short code from app.status.ErrorCode
+    error_code: Mapped[str | None] = mapped_column(String, nullable=True)
     upload_time: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC)
     )

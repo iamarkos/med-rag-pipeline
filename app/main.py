@@ -2,12 +2,14 @@ from typing import Any
 
 import fitz
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
+from kombu.exceptions import OperationalError as BrokerError
 from sqlalchemy.orm import Session
 
 from app.celery_app import PROCESS_NOTE_TASK, celery_app
 from app.database import get_db
 from app.embeddings import embed_text
 from app.models import ClinicalDocument, Patient
+from app.status import DocumentStatus, ErrorCode
 
 # The database schema (tables and the pgvector extension) is created by the
 # Alembic migrations, not by the API at startup.
@@ -48,22 +50,32 @@ async def upload_document(
         except UnicodeDecodeError:
             raise HTTPException(status_code=400, detail="Ensure valid UTF-8 text.")
 
-    # Identity Isolation
+    # Identity Isolation + Clinical Storage (UUID linked).
+    # Saved in one transaction: either the patient and the document both exist,
+    # or neither does.
     new_patient = Patient(full_name=patient_name)
-    db.add(new_patient)
+    new_doc = ClinicalDocument(
+        filename=file.filename,
+        status=DocumentStatus.PENDING,
+        patient=new_patient,
+    )
+    db.add_all([new_patient, new_doc])
     db.commit()
     db.refresh(new_patient)
-
-    # Clinical Storage (UUID linked)
-    new_doc = ClinicalDocument(
-        filename=file.filename, status="pending", patient_id=new_patient.id
-    )
-    db.add(new_doc)
-    db.commit()
     db.refresh(new_doc)
 
     # Send to Celery worker (by task name, so the API never imports the worker)
-    task = celery_app.send_task(PROCESS_NOTE_TASK, args=[new_doc.id, text_content])
+    try:
+        task = celery_app.send_task(PROCESS_NOTE_TASK, args=[new_doc.id, text_content])
+    except BrokerError:
+        # Redis is unreachable: nothing will ever process this document, so say so.
+        new_doc.status = DocumentStatus.FAILED
+        new_doc.error_code = ErrorCode.QUEUE_UNAVAILABLE
+        db.commit()
+        raise HTTPException(
+            status_code=503,
+            detail="Processing queue unavailable. Please try again later.",
+        )
 
     return {
         "message": "Document received and queued for processing.",
@@ -79,10 +91,32 @@ async def get_task_status(task_id: str) -> dict[str, Any]:
     # Check Redis for the status of the task
     task_result = celery_app.AsyncResult(task_id)
 
-    if task_result.ready():
-        return {"status": "completed", "result": task_result.result}
+    if task_result.state == "SUCCESS":
+        # The task reports its own outcome: "completed", or "failed" + error_code.
+        outcome = task_result.result
+        return {"status": outcome["status"], "result": outcome}
+
+    if task_result.state == "FAILURE":
+        # The task died. Never return the exception itself: it may contain text.
+        return {"status": "failed", "result": {"error_code": ErrorCode.TASK_CRASHED}}
 
     return {"status": task_result.status}
+
+
+@app.get("/documents/{document_id}")
+def get_document_status(
+    document_id: int, db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    # The database is the source of truth for what happened to a document.
+    document = db.get(ClinicalDocument, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    return {
+        "id": document.id,
+        "status": document.status,
+        "error_code": document.error_code,
+    }
 
 
 @app.get("/search")
