@@ -1,29 +1,16 @@
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from typing import Any
 
 import fitz
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.database import engine, get_db
+from app.database import get_db
 from app.models import ClinicalDocument, Patient
 from app.worker import process_clinical_note
 
-
-# Before the API starts accepting requests
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # Enable the pgvector extension in PostgreSQL
-    with engine.connect() as conn:
-        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        conn.commit()
-
-    yield
-
-
-app = FastAPI(title="Medical RAG Pipeline", lifespan=lifespan)
+# The database schema (tables and the pgvector extension) is created by the
+# Alembic migrations, not by the API at startup.
+app = FastAPI(title="Medical RAG Pipeline")
 
 
 @app.post("/upload", status_code=status.HTTP_202_ACCEPTED)

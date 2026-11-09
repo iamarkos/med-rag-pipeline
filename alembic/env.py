@@ -10,6 +10,7 @@ from alembic import context
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # 2. Import your Base and EVERY model so Alembic can read their structure
+import app.models  # noqa: F401  (registers the tables on Base.metadata)
 from app.config import DATABASE_URL
 from app.database import Base
 
