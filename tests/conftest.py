@@ -3,8 +3,9 @@
 How it works:
 1. TEST_DATABASE_URL (from .env, or from CI) names a database whose name ends
    in "_test".
-2. DATABASE_URL is pointed at it before the app is imported. The app under
-   test only ever sees the test database.
+2. DATABASE_URL is pointed at it, and a temporary encryption key is created,
+   before the app is imported. The app under test only ever sees the test
+   database and the temporary key.
 3. At the start of the run, the database is created if it is missing and
    brought up to date with the Alembic migrations (so the migrations are
    tested too).
@@ -21,6 +22,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import pytest
 from alembic.config import Config
+from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
@@ -65,6 +67,10 @@ TEST_DATABASE_URL = _require_test_database_url()
 
 # The app reads DATABASE_URL when it is first imported, so this comes first.
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+
+# Tests get their own throwaway encryption key, so they never depend on (or
+# touch) the real one in your .env.
+os.environ["TEXT_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
 
 
 @pytest.fixture(scope="session", autouse=True)

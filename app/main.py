@@ -6,6 +6,7 @@ from kombu.exceptions import OperationalError as BrokerError
 from sqlalchemy.orm import Session
 
 from app.celery_app import PROCESS_NOTE_TASK, celery_app
+from app.crypto import encrypt_text
 from app.database import get_db
 from app.embeddings import embed_text
 from app.models import ClinicalDocument, Patient
@@ -64,9 +65,13 @@ async def upload_document(
     db.refresh(new_patient)
     db.refresh(new_doc)
 
-    # Send to Celery worker (by task name, so the API never imports the worker)
+    # Send to Celery worker (by task name, so the API never imports the worker).
+    # The text is encrypted first, so it is unreadable while it waits in Redis.
+    encrypted_text = encrypt_text(text_content)
     try:
-        task = celery_app.send_task(PROCESS_NOTE_TASK, args=[new_doc.id, text_content])
+        task = celery_app.send_task(
+            PROCESS_NOTE_TASK, args=[new_doc.id, encrypted_text]
+        )
     except BrokerError:
         # Redis is unreachable: nothing will ever process this document, so say so.
         new_doc.status = DocumentStatus.FAILED

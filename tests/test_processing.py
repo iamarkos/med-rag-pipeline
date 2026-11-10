@@ -7,6 +7,7 @@ need no downloads. All text is synthetic.
 import pytest
 from sqlalchemy.exc import OperationalError
 
+from app.crypto import encrypt_text
 from app.models import ClinicalDocument
 from app.processing import mark_failed, process_document
 from app.status import DocumentStatus, ErrorCode
@@ -32,7 +33,7 @@ def _reload(db, document_id):
 def test_a_document_is_redacted_embedded_and_completed(db, add_document, fake_models):
     document_id = add_document()
 
-    result = process_document(document_id, NOTE)
+    result = process_document(document_id, encrypt_text(NOTE))
 
     assert result == {"status": "completed", "doc_id": document_id}
     document = _reload(db, document_id)
@@ -41,6 +42,27 @@ def test_a_document_is_redacted_embedded_and_completed(db, add_document, fake_mo
     assert document.extracted_data["redacted_text"] == "<PERSON> has chest pain"
     assert document.extracted_data["symptoms"] == ["cardiac distress"]
     assert len(document.embedding) == 384
+
+
+def test_text_that_cannot_be_decrypted_is_recorded_as_failed(
+    db, add_document, fake_models, capsys
+):
+    document_id = add_document()
+
+    # Plain text is not a valid token, as if the key had changed or the message
+    # had been altered in the queue.
+    result = process_document(document_id, NOTE)
+
+    assert result == {
+        "status": "failed",
+        "doc_id": document_id,
+        "error_code": ErrorCode.DECRYPTION_FAILED,
+    }
+    document = _reload(db, document_id)
+    assert document.status == DocumentStatus.FAILED
+    assert document.error_code == ErrorCode.DECRYPTION_FAILED
+    assert document.extracted_data is None
+    assert "John Smith" not in capsys.readouterr().out
 
 
 def test_a_redaction_failure_is_recorded_and_leaks_no_text(
@@ -52,7 +74,7 @@ def test_a_redaction_failure_is_recorded_and_leaks_no_text(
     monkeypatch.setattr("app.processing.redact_pii", broken)
     document_id = add_document()
 
-    result = process_document(document_id, NOTE)
+    result = process_document(document_id, encrypt_text(NOTE))
 
     assert result == {
         "status": "failed",
@@ -74,7 +96,7 @@ def test_an_embedding_failure_is_recorded(db, add_document, fake_models, monkeyp
     monkeypatch.setattr("app.processing.embed_text", broken)
     document_id = add_document()
 
-    result = process_document(document_id, NOTE)
+    result = process_document(document_id, encrypt_text(NOTE))
 
     assert result["error_code"] == ErrorCode.EMBEDDING_FAILED
     document = _reload(db, document_id)
@@ -83,7 +105,7 @@ def test_an_embedding_failure_is_recorded(db, add_document, fake_models, monkeyp
 
 
 def test_a_missing_document_is_reported_as_failed(fake_models):
-    result = process_document(999999, NOTE)
+    result = process_document(999999, encrypt_text(NOTE))
 
     assert result == {
         "status": "failed",
@@ -101,7 +123,7 @@ def test_a_database_outage_is_not_swallowed(fake_models, monkeypatch):
     monkeypatch.setattr("app.processing.SessionLocal", _database_is_down)
 
     with pytest.raises(OperationalError):
-        process_document(1, NOTE)
+        process_document(1, encrypt_text(NOTE))
 
 
 def test_recording_a_failure_survives_a_database_outage(monkeypatch):

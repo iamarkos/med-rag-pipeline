@@ -9,6 +9,7 @@ from typing import Any
 
 from sqlalchemy.exc import OperationalError
 
+from app.crypto import decrypt_text
 from app.database import SessionLocal
 from app.embeddings import embed_text
 from app.models import ClinicalDocument
@@ -88,18 +89,24 @@ def _extract_data(safe_text: str) -> dict[str, Any]:
     }
 
 
-def process_document(document_id: int, document_text: str) -> dict[str, Any]:
-    """Redact, embed and store one document. Returns the outcome.
+def process_document(document_id: int, encrypted_text: str) -> dict[str, Any]:
+    """Decrypt, redact, embed and store one document. Returns the outcome.
+
+    The text arrives encrypted (see app/crypto.py). The decrypted original lives
+    only in this function: it is never saved, and only the redacted copy is.
 
     A database outage (OperationalError) is deliberately NOT handled here: it
     propagates, so the caller can decide to try again later.
     """
     # The code to report if the stage we are about to run fails.
-    failure_code = ErrorCode.REDACTION_FAILED
+    failure_code = ErrorCode.DECRYPTION_FAILED
     try:
         if not _set_status(document_id, DocumentStatus.PROCESSING):
             return mark_failed(document_id, ErrorCode.DOCUMENT_NOT_FOUND)
 
+        document_text = decrypt_text(encrypted_text)
+
+        failure_code = ErrorCode.REDACTION_FAILED
         safe_text = redact_pii(document_text)
 
         # Converts the text into an array of 384 floating-point numbers

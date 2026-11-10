@@ -2,6 +2,7 @@ from unittest.mock import MagicMock, patch
 
 from kombu.exceptions import OperationalError as BrokerError
 
+from app.crypto import decrypt_text
 from app.database import SessionLocal
 from app.models import ClinicalDocument
 from app.status import DocumentStatus, ErrorCode
@@ -40,6 +41,19 @@ def test_upload_document(client):
 
         # 4. Verify the API actually tried to trigger the background worker
         mock_celery_task.assert_called_once()
+
+
+def test_the_queued_text_is_encrypted(client):
+    files = {"file": ("note.txt", b"John Smith has chest pain.", "text/plain")}
+    with patch("app.main.celery_app.send_task") as mock_celery_task:
+        mock_celery_task.return_value.id = "test-task-uuid-9999"
+        client.post("/upload", files=files, data={"patient_name": "Test Patient"})
+
+    # What the API hands to the queue is exactly what would sit in Redis.
+    _, queued_text = mock_celery_task.call_args.kwargs["args"]
+
+    assert "John Smith" not in queued_text
+    assert decrypt_text(queued_text) == "John Smith has chest pain."
 
 
 def _sample_upload():

@@ -25,12 +25,12 @@ print("AI Models loaded successfully!")
 
 @celery_app.task(bind=True, name=PROCESS_NOTE_TASK, max_retries=MAX_RETRIES)  # type: ignore[untyped-decorator]
 def process_clinical_note(
-    self: Any, document_id: int, document_text: str
+    self: Any, document_id: int, encrypted_text: str
 ) -> dict[str, Any]:
     print(f"Task {self.request.id} started for Document ID: {document_id}")
 
     try:
-        return process_document(document_id, document_text)
+        return process_document(document_id, encrypted_text)
     except OperationalError:
         # The database is temporarily unreachable: wait, then run the task again.
         # No exception is passed on, so nothing sensitive is stored with the retry.

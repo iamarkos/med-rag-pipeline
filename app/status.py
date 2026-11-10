@@ -23,6 +23,7 @@ class ErrorCode:
 
     QUEUE_UNAVAILABLE = "QUEUE_UNAVAILABLE"  # the API could not reach Redis
     DOCUMENT_NOT_FOUND = "DOCUMENT_NOT_FOUND"  # the database row is gone
+    DECRYPTION_FAILED = "DECRYPTION_FAILED"  # the queued text could not be decrypted
     REDACTION_FAILED = "REDACTION_FAILED"  # PII removal raised an error
     EMBEDDING_FAILED = "EMBEDDING_FAILED"  # the embedding model raised an error
     SAVE_FAILED = "SAVE_FAILED"  # writing the result raised an error
