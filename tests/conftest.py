@@ -119,3 +119,27 @@ def db():
 
     with SessionLocal() as session:
         yield session
+
+
+@pytest.fixture
+def add_document(db):
+    """Returns a function that saves a document (with its own patient).
+
+    The function returns the new document's id. All data is synthetic.
+    """
+    from app.models import ClinicalDocument, Patient
+    from app.status import DocumentStatus
+
+    def _add(status=DocumentStatus.PENDING, embedding=None, filename="note.txt"):
+        patient = Patient(full_name="Test Patient")
+        document = ClinicalDocument(
+            filename=filename,
+            status=status,
+            embedding=embedding,
+            patient=patient,
+        )
+        db.add_all([patient, document])
+        db.commit()
+        return document.id
+
+    return _add
