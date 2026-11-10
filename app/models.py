@@ -16,7 +16,12 @@ class Patient(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True, default=uuid.uuid4, index=True
     )
-    full_name: Mapped[str] = mapped_column(String, nullable=False)
+    # A pseudonym such as "P-0042", chosen by the source system. It is not a
+    # name, and the list that links it to a real person stays outside this
+    # project. Unique, so one reference always means one patient.
+    patient_ref: Mapped[str] = mapped_column(
+        String, nullable=False, unique=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC)
     )

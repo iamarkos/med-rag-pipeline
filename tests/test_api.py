@@ -1,10 +1,11 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
 from kombu.exceptions import OperationalError as BrokerError
 
 from app.crypto import decrypt_text
 from app.database import SessionLocal
-from app.models import ClinicalDocument
+from app.models import ClinicalDocument, Patient
 from app.status import DocumentStatus, ErrorCode
 
 
@@ -23,7 +24,7 @@ def test_upload_document(client):
                 "text/plain",
             )
         }
-        data = {"patient_name": "Test Patient"}
+        data = {"patient_ref": "P-0042"}
 
         # 2. Execute the request
         response = client.post("/upload", files=files, data=data)
@@ -37,7 +38,7 @@ def test_upload_document(client):
         )
         assert response_data["task_id"] == "test-task-uuid-1234"
         assert "database_id" in response_data
-        assert "patient_uuid" in response_data
+        assert response_data["patient_ref"] == "P-0042"
 
         # 4. Verify the API actually tried to trigger the background worker
         mock_celery_task.assert_called_once()
@@ -47,7 +48,7 @@ def test_the_queued_text_is_encrypted(client):
     files = {"file": ("note.txt", b"John Smith has chest pain.", "text/plain")}
     with patch("app.main.celery_app.send_task") as mock_celery_task:
         mock_celery_task.return_value.id = "test-task-uuid-9999"
-        client.post("/upload", files=files, data={"patient_name": "Test Patient"})
+        client.post("/upload", files=files, data={"patient_ref": "P-0042"})
 
     # What the API hands to the queue is exactly what would sit in Redis.
     _, queued_text = mock_celery_task.call_args.kwargs["args"]
@@ -58,7 +59,43 @@ def test_the_queued_text_is_encrypted(client):
 
 def _sample_upload():
     files = {"file": ("note.txt", b"Patient complains of chest pain.", "text/plain")}
-    return files, {"patient_name": "Test Patient"}
+    return files, {"patient_ref": "P-0042"}
+
+
+def _upload(client, patient_ref):
+    files = {"file": ("note.txt", b"Patient complains of chest pain.", "text/plain")}
+    with patch("app.main.celery_app.send_task") as mock_celery_task:
+        mock_celery_task.return_value.id = "test-task-uuid"
+        return client.post("/upload", files=files, data={"patient_ref": patient_ref})
+
+
+def test_uploads_with_the_same_reference_share_one_patient(client, db):
+    first = _upload(client, "P-0042")
+    second = _upload(client, "P-0042")
+
+    assert first.status_code == second.status_code == 202
+    assert db.query(Patient).count() == 1
+    patient_ids = {doc.patient_id for doc in db.query(ClinicalDocument).all()}
+    assert len(patient_ids) == 1
+    assert db.query(ClinicalDocument).count() == 2
+
+
+def test_different_references_are_different_patients(client, db):
+    _upload(client, "P-0042")
+    _upload(client, "P-0043")
+
+    assert db.query(Patient).count() == 2
+
+
+@pytest.mark.parametrize(
+    "bad_reference", ["John Smith", "P-12", "p-0042", "P-12345678901"]
+)
+def test_a_name_or_malformed_reference_is_refused(client, db, bad_reference):
+    response = _upload(client, bad_reference)
+
+    assert response.status_code == 422
+    assert db.query(Patient).count() == 0
+    assert db.query(ClinicalDocument).count() == 0
 
 
 def test_upload_when_queue_is_down(client):

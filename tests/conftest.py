@@ -15,6 +15,7 @@ The app itself is imported inside the fixtures below (and by the test modules),
 never at the top of this file, so that step 2 always happens first.
 """
 
+import itertools
 import os
 import re
 from pathlib import Path
@@ -129,15 +130,22 @@ def db():
 
 @pytest.fixture
 def add_document(db):
-    """Returns a function that saves a document (with its own patient).
+    """Returns a function that saves a document (by default with a new patient).
 
     The function returns the new document's id. All data is synthetic.
     """
     from app.models import ClinicalDocument, Patient
     from app.status import DocumentStatus
 
-    def _add(status=DocumentStatus.PENDING, embedding=None, filename="note.txt"):
-        patient = Patient(full_name="Test Patient")
+    references = itertools.count(1)
+
+    def _add(
+        status=DocumentStatus.PENDING,
+        embedding=None,
+        filename="note.txt",
+        patient_ref=None,
+    ):
+        patient = Patient(patient_ref=patient_ref or f"P-{next(references):04d}")
         document = ClinicalDocument(
             filename=filename,
             status=status,

@@ -9,7 +9,8 @@ from app.celery_app import PROCESS_NOTE_TASK, celery_app
 from app.crypto import encrypt_text
 from app.database import get_db
 from app.embeddings import embed_text
-from app.models import ClinicalDocument, Patient
+from app.models import ClinicalDocument
+from app.patients import PATIENT_REF_PATTERN, get_or_create_patient
 from app.status import DocumentStatus, ErrorCode
 
 # The database schema (tables and the pgvector extension) is created by the
@@ -20,7 +21,7 @@ app = FastAPI(title="Medical RAG Pipeline")
 @app.post("/upload", status_code=status.HTTP_202_ACCEPTED)
 async def upload_document(
     file: UploadFile = File(...),
-    patient_name: str = Form(...),
+    patient_ref: str = Form(..., pattern=PATIENT_REF_PATTERN),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     # Validate File Type
@@ -51,18 +52,17 @@ async def upload_document(
         except UnicodeDecodeError:
             raise HTTPException(status_code=400, detail="Ensure valid UTF-8 text.")
 
-    # Identity Isolation + Clinical Storage (UUID linked).
-    # Saved in one transaction: either the patient and the document both exist,
-    # or neither does.
-    new_patient = Patient(full_name=patient_name)
+    # The patient is known only by a pseudonymous reference, and the same
+    # reference always gives the same patient. Saved in one transaction: either
+    # the patient and the document both exist, or neither does.
+    patient = get_or_create_patient(db, patient_ref)
     new_doc = ClinicalDocument(
         filename=file.filename,
         status=DocumentStatus.PENDING,
-        patient=new_patient,
+        patient=patient,
     )
-    db.add_all([new_patient, new_doc])
+    db.add(new_doc)
     db.commit()
-    db.refresh(new_patient)
     db.refresh(new_doc)
 
     # Send to Celery worker (by task name, so the API never imports the worker).
@@ -86,7 +86,7 @@ async def upload_document(
         "message": "Document received and queued for processing.",
         "task_id": task.id,
         "database_id": new_doc.id,
-        "patient_uuid": new_patient.id,
+        "patient_ref": patient_ref,
         "filename": file.filename,
     }
 
