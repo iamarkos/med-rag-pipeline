@@ -1,7 +1,16 @@
 from typing import Any
 
 import fitz
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Response,
+    UploadFile,
+    status,
+)
 from kombu.exceptions import OperationalError as BrokerError
 from sqlalchemy.orm import Session
 
@@ -10,6 +19,7 @@ from app.crypto import encrypt_text
 from app.database import get_db
 from app.embeddings import embed_text
 from app.models import ClinicalDocument
+from app.original_store import OriginalStore, get_original_store
 from app.patients import PATIENT_REF_PATTERN, get_or_create_patient
 from app.status import DocumentStatus, ErrorCode
 
@@ -17,12 +27,17 @@ from app.status import DocumentStatus, ErrorCode
 # Alembic migrations, not by the API at startup.
 app = FastAPI(title="Medical RAG Pipeline")
 
+# Create the original store now, so a missing ORIGINALS_DIR stops the API at
+# startup instead of at the first upload.
+get_original_store()
+
 
 @app.post("/upload", status_code=status.HTTP_202_ACCEPTED)
 async def upload_document(
     file: UploadFile = File(...),
     patient_ref: str = Form(..., pattern=PATIENT_REF_PATTERN),
     db: Session = Depends(get_db),
+    store: OriginalStore = Depends(get_original_store),
 ) -> dict[str, Any]:
     # Validate File Type
     allowed_types = ["text/plain", "text/csv", "application/pdf"]
@@ -61,7 +76,18 @@ async def upload_document(
         patient=patient,
     )
     db.add(new_doc)
-    db.commit()
+    db.flush()  # assigns the id and the source_ref; nothing is saved yet
+    source_ref = new_doc.source_ref
+
+    # Keep the original, so a doctor can open it later. If the database save
+    # then fails, remove the file again so none is left behind unreferenced.
+    try:
+        store.save(source_ref, content, file.content_type or "")
+        db.commit()
+    except Exception:
+        db.rollback()
+        store.delete(source_ref)
+        raise
     db.refresh(new_doc)
 
     # Send to Celery worker (by task name, so the API never imports the worker).
@@ -86,7 +112,7 @@ async def upload_document(
         "task_id": task.id,
         "database_id": new_doc.id,
         "patient_ref": patient_ref,
-        "source_ref": new_doc.source_ref,
+        "source_ref": source_ref,
     }
 
 
@@ -121,6 +147,29 @@ def get_document_status(
         "status": document.status,
         "error_code": document.error_code,
     }
+
+
+@app.get("/documents/{document_id}/original")
+def get_original(
+    document_id: int,
+    db: Session = Depends(get_db),
+    store: OriginalStore = Depends(get_original_store),
+) -> Response:
+    # This is the doctor's path to the real document. It is NOT redacted, and
+    # there is no login yet, so it must not be exposed beyond a demo.
+    document = db.get(ClinicalDocument, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    original = store.load(document.source_ref)
+    if original is None:
+        raise HTTPException(status_code=404, detail="The original is not available.")
+
+    return Response(
+        content=original.content,
+        media_type=original.content_type,
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 @app.get("/search")

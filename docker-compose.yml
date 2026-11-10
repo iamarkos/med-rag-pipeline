@@ -2,6 +2,7 @@ x-app-environment: &app-environment
   DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB}
   REDIS_URL: redis://redis:6379/0
   TEXT_ENCRYPTION_KEY: ${TEXT_ENCRYPTION_KEY:?Set TEXT_ENCRYPTION_KEY in .env}
+  ORIGINALS_DIR: /data/originals
 
 services:
   db:
@@ -47,6 +48,7 @@ services:
     environment: *app-environment
     volumes:
       - .:/app
+      - originals:/data/originals
     ports:
       - "8000:8000"
     depends_on:
@@ -70,3 +72,7 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+
+volumes:
+  # The demo's original store: uploaded originals survive restarts here.
+  originals:

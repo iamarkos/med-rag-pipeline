@@ -18,6 +18,8 @@ never at the top of this file, so that step 2 always happens first.
 import itertools
 import os
 import re
+import shutil
+import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -73,6 +75,9 @@ os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 # touch) the real one in your .env.
 os.environ["TEXT_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
 
+# Uploaded originals go to a temporary folder, never to a real one.
+os.environ["ORIGINALS_DIR"] = tempfile.mkdtemp(prefix="originals_test_")
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _test_database():
@@ -93,6 +98,21 @@ def _test_database():
     # Alembic would otherwise reconfigure Python's logging inside the test run.
     alembic_config.attributes["configure_logger"] = False
     command.upgrade(alembic_config, "head")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def originals_dir():
+    """The temporary folder that holds originals during the tests."""
+    folder = Path(os.environ["ORIGINALS_DIR"])
+    yield folder
+    shutil.rmtree(folder, ignore_errors=True)
+
+
+@pytest.fixture(autouse=True)
+def _clean_originals(originals_dir):
+    """Start every test with no stored originals."""
+    for path in originals_dir.iterdir():
+        path.unlink()
 
 
 def _empty_all_tables():

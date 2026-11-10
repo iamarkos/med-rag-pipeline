@@ -27,3 +27,12 @@ def get_text_encryption_key() -> str:
     handle document text (such as the database migrations) do not need it.
     """
     return _require("TEXT_ENCRYPTION_KEY")
+
+
+def get_originals_dir() -> str:
+    """The folder where uploaded originals are kept (the demo's original store).
+
+    Read when it is needed, not when this module loads, so tools that never
+    touch originals (such as the database migrations) do not need it.
+    """
+    return _require("ORIGINALS_DIR")
