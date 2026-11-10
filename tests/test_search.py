@@ -21,15 +21,17 @@ def _search(client, monkeypatch, query_vector):
 
 
 def test_the_closest_document_comes_first(client, add_document, monkeypatch):
-    add_document(DocumentStatus.COMPLETED, _unit_vector(1), "far.txt")
-    close = add_document(DocumentStatus.COMPLETED, _unit_vector(0), "close.txt")
+    add_document(DocumentStatus.COMPLETED, _unit_vector(1))
+    close = add_document(DocumentStatus.COMPLETED, _unit_vector(0))
 
     response = _search(client, monkeypatch, _unit_vector(0))
 
     assert response.status_code == 200
     results = response.json()["results"]
     assert results[0]["id"] == close
-    assert results[0]["filename"] == "close.txt"
+    assert results[0]["name"] == f"document-{close}"
+    assert results[0]["source_ref"].startswith("src-")
+    assert "filename" not in results[0]
 
 
 def test_only_completed_documents_with_a_vector_are_returned(

@@ -38,6 +38,8 @@ def test_upload_document(client):
         )
         assert response_data["task_id"] == "test-task-uuid-1234"
         assert "database_id" in response_data
+        assert response_data["source_ref"].startswith("src-")
+        assert "sample_clinical" not in response.text
         assert response_data["patient_ref"] == "P-0042"
 
         # 4. Verify the API actually tried to trigger the background worker

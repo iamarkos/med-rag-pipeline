@@ -142,12 +142,10 @@ def add_document(db):
     def _add(
         status=DocumentStatus.PENDING,
         embedding=None,
-        filename="note.txt",
         patient_ref=None,
     ):
         patient = Patient(patient_ref=patient_ref or f"P-{next(references):04d}")
         document = ClinicalDocument(
-            filename=filename,
             status=status,
             embedding=embedding,
             patient=patient,

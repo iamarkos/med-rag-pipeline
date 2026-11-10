@@ -57,7 +57,6 @@ async def upload_document(
     # the patient and the document both exist, or neither does.
     patient = get_or_create_patient(db, patient_ref)
     new_doc = ClinicalDocument(
-        filename=file.filename,
         status=DocumentStatus.PENDING,
         patient=patient,
     )
@@ -87,7 +86,7 @@ async def upload_document(
         "task_id": task.id,
         "database_id": new_doc.id,
         "patient_ref": patient_ref,
-        "filename": file.filename,
+        "source_ref": new_doc.source_ref,
     }
 
 
@@ -148,7 +147,8 @@ def search_documents(query: str, db: Session = Depends(get_db)) -> dict[str, Any
         "results": [
             {
                 "id": doc.id,
-                "filename": doc.filename,
+                "name": doc.display_name,
+                "source_ref": doc.source_ref,
                 "extracted_data": doc.extracted_data,
             }
             for doc in results

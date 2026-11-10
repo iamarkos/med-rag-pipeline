@@ -10,6 +10,11 @@ from app.database import Base
 from app.status import DocumentStatus
 
 
+def _new_source_ref() -> str:
+    """An opaque reference that says nothing about the document or its owner."""
+    return f"src-{uuid.uuid4().hex}"
+
+
 class Patient(Base):
     __tablename__ = "patients"
 
@@ -33,7 +38,12 @@ class ClinicalDocument(Base):
     __tablename__ = "clinical_documents"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    filename: Mapped[str] = mapped_column(String, nullable=False)
+    # Where the original lives at its source (see the original store). Random
+    # and meaningless on purpose: the uploaded filename is never kept, because a
+    # name like "John_Smith_labs.pdf" would leak what redaction removes.
+    source_ref: Mapped[str] = mapped_column(
+        String, nullable=False, unique=True, index=True, default=_new_source_ref
+    )
     status: Mapped[str] = mapped_column(String, default=DocumentStatus.PENDING)
     # Set only when status is "failed": a short code from app.status.ErrorCode
     error_code: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -50,3 +60,8 @@ class ClinicalDocument(Base):
     embedding: Mapped[list[float] | None] = mapped_column(Vector(384), nullable=True)
 
     patient: Mapped["Patient"] = relationship(back_populates="documents")
+
+    @property
+    def display_name(self) -> str:
+        """A neutral label to show people instead of the uploaded filename."""
+        return f"document-{self.id}"
