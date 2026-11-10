@@ -17,8 +17,11 @@ from app.database import Base
 # this is the Alembic Config object
 config = context.config
 
-# Interpret the config file for Python logging.
-if config.config_file_name is not None:
+# Interpret the config file for Python logging (unless the caller, such as the
+# test setup, asked us to leave logging alone).
+if config.config_file_name is not None and config.attributes.get(
+    "configure_logger", True
+):
     fileConfig(config.config_file_name)
 
 # 3. Take the database URL from the environment (see .env.example).

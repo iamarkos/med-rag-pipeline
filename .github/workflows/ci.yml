@@ -42,8 +42,9 @@ jobs:
     # Throwaway values for the disposable database below; nothing real lives here.
     env:
       DATABASE_URL: postgresql+psycopg://admin:password@localhost:5433/medical_db
+      TEST_DATABASE_URL: postgresql+psycopg://admin:password@localhost:5433/medical_db_test
       REDIS_URL: redis://localhost:6379/0
-    
+
     services:
       db:
         image: pgvector/pgvector:pg15
