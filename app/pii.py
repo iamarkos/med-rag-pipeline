@@ -6,7 +6,7 @@ with warm_up) and then reused.
 
 from functools import lru_cache
 
-from presidio_analyzer import AnalyzerEngine
+from presidio_analyzer import AnalyzerEngine, RecognizerResult
 from presidio_anonymizer import AnonymizerEngine
 
 # The kinds of personal data we look for.
@@ -23,10 +23,23 @@ def warm_up() -> None:
     _get_engines()
 
 
+def find_pii(text: str) -> list[RecognizerResult]:
+    """Find the personal data in a text: what it is and where it sits.
+
+    redact_pii uses exactly this, and so does the quality report, so the report
+    measures what the worker really does.
+    """
+    analyzer, _ = _get_engines()
+    results: list[RecognizerResult] = analyzer.analyze(
+        text=text, entities=PII_ENTITIES, language="en"
+    )
+    return results
+
+
 def redact_pii(text: str) -> str:
     """Return the text with personal data replaced by placeholders like <PERSON>."""
-    analyzer, anonymizer = _get_engines()
-    analyzer_results = analyzer.analyze(text=text, entities=PII_ENTITIES, language="en")
+    _, anonymizer = _get_engines()
+    analyzer_results = find_pii(text)
     anonymized_result = anonymizer.anonymize(
         text=text,
         analyzer_results=analyzer_results,
