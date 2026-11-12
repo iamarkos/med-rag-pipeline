@@ -16,12 +16,12 @@ from synthetic_notes import load_corpus
 # be hidden. Set from the first measurement; raise as redaction improves.
 # Set each value to the recall you saw, rounded down to the nearest 5%.
 MINIMUM_RECALL = {
-    "PERSON": 0.90,
-    "LOCATION": 0.25,
-    "DATE_TIME": 0.0,
-    "PHONE_NUMBER": 0.60,
+    "PERSON": 0.95,
+    "LOCATION": 0.85,
+    "DATE_TIME": 1.0,
+    "PHONE_NUMBER": 1.0,
     "EMAIL_ADDRESS": 1.0,
-    "MEDICAL_RECORD_NUMBER": 0.05,
+    "MEDICAL_RECORD_NUMBER": 1.0,
 }
 
 
